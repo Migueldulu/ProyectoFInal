@@ -2,6 +2,7 @@
 #include "AndroidUploader.h"
 #include <android/log.h>
 #include <sstream>
+#include "configReader.h"
 
 #define LOG_TAG "telemetria"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -22,8 +23,7 @@ bool GestorTelemetria::initialize(const UploaderConfig& cfg, AndroidUploader* up
         // Crear o asegurar sesion antes de enviar frames
         ok = uploader_->ensureSession();
         if (!ok) {
-            __android_log_print(ANDROID_LOG_ERROR, "telemetria",
-                                "ensureSession failed, normalmente es por una clave erronea");
+            __android_log_print(ANDROID_LOG_ERROR, "telemetria","ensureSession failed, normalmente es por una clave erronea");
         }
     }
     return ok;
@@ -33,10 +33,16 @@ void GestorTelemetria::recordFrame(const VRFrameDataPlain& frame) {
     std::lock_guard<std::mutex> lock(mtx_);
     buffer_.push_back(frame);
     framesCount_++;
+    __android_log_print(ANDROID_LOG_INFO, "telemetria",
+                        "recordFrame: count=%d / threshold=%d",
+                        framesCount_, cfg_.framesPerFile);
     if (cfg_.framesPerFile > 0 && framesCount_ >= cfg_.framesPerFile) {
         std::vector<VRFrameDataPlain> chunk;
         chunk.swap(buffer_);
         framesCount_ = 0;
+        __android_log_print(ANDROID_LOG_INFO, "telemetria",
+                            "recordFrame: threshold reached, uploading %zu frames",
+                            chunk.size());
         lock.~lock_guard();
         serializeAndSend(chunk);
     }
@@ -50,10 +56,14 @@ void GestorTelemetria::flushAndUpload() {
         chunk.swap(buffer_);
         framesCount_ = 0;
     }
+    __android_log_print(ANDROID_LOG_INFO, "telemetria",
+                        "antes de serialize and send en flush");
     serializeAndSend(chunk);
 }
 
 void GestorTelemetria::shutdown() {
+    __android_log_print(ANDROID_LOG_INFO, "telemetria",
+                        "shutdown");
     flushAndUpload();
 }
 
@@ -107,9 +117,17 @@ static std::string toJsonFlat(const std::vector<VRFrameDataPlain>& frames, const
 }
 
 void GestorTelemetria::serializeAndSend(const std::vector<VRFrameDataPlain>& chunk) {
-    if (!uploader_ || !cfg_.enableCloudUpload) return;
+    __android_log_print(ANDROID_LOG_INFO, "telemetria",
+                        "entro en serializeandsend");
+    if (!uploader_) return;
+    __android_log_print(ANDROID_LOG_INFO, "telemetria",
+                        "paso el primer if");
     const std::string json = toJsonFlat(chunk, sessionId_);
+    __android_log_print(ANDROID_LOG_INFO, "telemetria",
+                        "antes del upload serializeAndSend: json.size=%d", (int)json.size());
     bool ok = uploader_->uploadJson(json);
+    __android_log_print(ANDROID_LOG_INFO, "telemetria",
+                        "despuess de uploadjson");
     if (ok) {
         __android_log_print(ANDROID_LOG_INFO, "telemetria",
                             "Uploaded chunk, frames: %zu", chunk.size());

@@ -52,13 +52,13 @@ void AndroidUploader::shutdown() {
 }
 
 bool AndroidUploader::uploadJson(const std::string& jsonBody) {
-    if (!cfg_.enableCloudUpload) return true;
     if (cfg_.endpointUrl.empty() || cfg_.apiKey.empty()) {
         LOGE("Missing supabase config");
         return false;
     }
-    // Build endpoint example. Adjust to your real REST path.
     std::string url = cfg_.endpointUrl;
+    LOGI("uploadJson: url=%s body.size=%d", url.c_str(), (int)jsonBody.size());
+
     std::vector<std::pair<std::string,std::string>> headers = {
             {"Content-Type", "application/json"},
             {"apikey", cfg_.apiKey},
@@ -193,7 +193,6 @@ bool AndroidUploader::ensureSession() {
         LOGE("ensureSession failed: empty sessionId");
         return false;
     }
-    if (!cfg_.enableCloudUpload) return true;
 
     std::string url = makeSessionsUrl();
     if (url.empty()) {

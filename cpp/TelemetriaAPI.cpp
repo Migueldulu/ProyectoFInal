@@ -3,6 +3,7 @@
 #include "AndroidUploader.h"
 #include <android/log.h>
 #include <mutex>
+#include "configReader.h"
 
 #define LOG_TAG "telemetria"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -59,16 +60,25 @@ int telemetry_initialize(const TelemetryConfigPlain* cfg) {
         LOGE("Java context not set");
         return -2;
     }
-    // Configurar uploader con VM y Activity
+    // Contexto Java para el uploader
     g_uploader.setJavaContext(g_vm, g_activity);
+
+    // Tomamos sesion y disp desde el caller
     UploaderConfig ucfg;
-    ucfg.endpointUrl = cfg->endpointUrl ? cfg->endpointUrl : "";
-    ucfg.apiKey = cfg->apiKey ? cfg->apiKey : "";
     ucfg.sessionId   = cfg->sessionId ? cfg->sessionId : "";
     ucfg.deviceInfo = cfg->deviceInfo ? cfg->deviceInfo : "";
-    ucfg.enableCloudUpload = cfg->enableCloudUpload != 0;
-    ucfg.enableLocalBackup = cfg->enableLocalBackup != 0;
-    ucfg.framesPerFile = cfg->framesPerFile > 0 ? cfg->framesPerFile : 5400;
+
+    //Cargamos el resto de info desde el fichero initialConfig.json o info por defecto
+    configReader::setConfig(ucfg);
+    if (!configReader_setConfig(ucfg)) {
+        LOGI("Config file not found or unreadable; endpoint/apiKey will likely be localhost:1414 - no apiKey.");
+    }
+    LOGI("config final: endpointUrl='%s', apiKey.len=%d, framesPerFile=%d, sessionId='%s', deviceInfo.len=%d",
+         ucfg.endpointUrl.c_str(),
+         (int)ucfg.apiKey.size(),
+         ucfg.framesPerFile,
+         ucfg.sessionId.c_str(),
+         (int)ucfg.deviceInfo.size());
 
     if (!g_uploader.initialize(ucfg)) {
         LOGE("Uploader initialize failed");
@@ -79,7 +89,11 @@ int telemetry_initialize(const TelemetryConfigPlain* cfg) {
         return -4;
     }
     LOGI("telemetry initialized");
-    return 0;
+    int frameRate = 60;
+    configReader::getFrameRate(frameRate);
+    // Garantizando limites [1,240]
+    if (frameRate < 1 || frameRate > 240) frameRate = 60;
+    return frameRate;
 }
 
 void telemetry_record_frame(const VRFrameDataPlain* frame) {

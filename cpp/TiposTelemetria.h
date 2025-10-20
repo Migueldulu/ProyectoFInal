@@ -3,22 +3,15 @@
 
 // Configuracion para uploader y gestor
 struct UploaderConfig {
-    std::string endpointUrl;
-    std::string apiKey;
-    std::string sessionId;
-    std::string deviceInfo;
-    bool enableCloudUpload = true;
-    bool enableLocalBackup = true;
+    std::string endpointUrl;  // Se carga desde initialConfig.json
+    std::string apiKey;       // Se carga desde initialConfig.json
+    std::string sessionId;    // Viene del initialize (Unity/UE)
+    std::string deviceInfo;   // Viene del initialize (Unity/UE)
     int framesPerFile = 5400;
 };
 
-// Estructura plain para marshalling desde C#
+// Estructura que se envia desde Unity/UE a C++
 struct TelemetryConfigPlain {
-    const char* endpointUrl;   // UTF-8
-    const char* apiKey;        // UTF-8
     const char* sessionId;     // UTF-8
-    const char* deviceInfo;     // UTF-8
-    int enableCloudUpload;     // 0 o 1
-    int enableLocalBackup;     // 0 o 1
-    int framesPerFile;         // por ejemplo 5400
+    const char* deviceInfo;    // UTF-8
 };

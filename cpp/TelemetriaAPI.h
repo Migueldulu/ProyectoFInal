@@ -16,7 +16,7 @@ extern "C" {
 // vm puede ser null si fue capturado en JNI_OnLoad.
 TELEMETRIA_API void telemetry_set_java_context(JavaVM* vm, jobject activity);
 // Inicializa el gestor y la capa de subida
-// Devuelve 0 en exito, negativo en error.
+// En exito devuelve el frameRate (1..240). En error, devuelve un codigo negativo.
 TELEMETRIA_API int  telemetry_initialize(const TelemetryConfigPlain* cfg);
 // Registra un frame de telemetria
 TELEMETRIA_API void telemetry_record_frame(const VRFrameDataPlain* frame);
