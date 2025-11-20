@@ -8,16 +8,16 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# Compile options
-add_compile_options(
-        -fno-exceptions
-        -fno-rtti
-)
-
 # Android specific
 if(ANDROID)
     add_definitions(-DANDROID)
 endif()
+
+# libreria que trabaja c3d
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libs" FORCE)
+set(EZC3D_BUILD_SHARED OFF CACHE BOOL "Build ezc3d shared" FORCE)
+set(EZC3D_BUILD_STATIC ON  CACHE BOOL "Build ezc3d static" FORCE)
+add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/ezc3d)
 
 # Sources
 add_library(telemetria SHARED
@@ -25,13 +25,24 @@ add_library(telemetria SHARED
         GestorTelemetria.cpp
         AndroidUploader.cpp
         configReader.cpp
+        C3DRecorder.cpp
+)
+
+target_compile_options(telemetria PRIVATE
+        -fno-exceptions
+        -fno-rtti
 )
 
 # Include directories
-target_include_directories(telemetria PRIVATE .)
+target_include_directories(telemetria PRIVATE
+        .
+        ${CMAKE_SOURCE_DIR}/thirdparty/ezc3d/include
+        ${CMAKE_BINARY_DIR}/thirdparty/ezc3d/include
+)
 
 # FORZAR libc++ estático y eliminar -static-libstdc++
 target_link_libraries(telemetria
+        ezc3d
         -lc++_static
         -lc++abi
         -landroid

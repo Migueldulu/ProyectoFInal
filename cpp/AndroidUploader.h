@@ -15,9 +15,7 @@ public:
     void shutdown();
 
     bool uploadJson(const std::string& jsonBody);
-
-    // Este metodo es porque mi base de datos pide iniciar sesion antes de empezar a enviar datos.
-    bool ensureSession();
+    //bool ensureSession(); comentado si funciona asi se debe borrar
 
 private:
     JavaVM* vm_ = nullptr;
@@ -29,6 +27,6 @@ private:
                              const std::string& body,
                              const std::vector<std::pair<std::string,std::string>>& headers);
 
-    // Construye la URL de vr_sessions a partir del endpoint de la tabla de frames
-    std::string makeSessionsUrl() const;
+
+    //std::string makeSessionsUrl() const; igual que ensureSession
 };

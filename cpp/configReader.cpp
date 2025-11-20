@@ -14,7 +14,7 @@
 // -------------------- Defaults globales --------------------
 static constexpr const char* kDefaultEndpoint = "http://localhost:1414";
 static constexpr const char* kDefaultApiKey = "non_existant";
-static constexpr int kDefaultFramesPerFile = 500;
+static constexpr int kDefaultFramesPerFile = 200;
 static constexpr int kDefaultFrameRate = 60;
 
 // Nota: evitamos JNI a proposito en FASE 1. El nombre de paquete
@@ -89,6 +89,21 @@ namespace {
         out = static_cast<int>(val);
         return true;
     }
+
+    static bool extractJsonBool(const std::string& text, const std::string& key, bool& out) {
+        const std::string kq = "\"" + key + "\"";
+        size_t p = text.find(kq);
+        if (p == std::string::npos) return false;
+        p = text.find(':', p + kq.size());
+        if (p == std::string::npos) return false;
+        while (p < text.size() && (text[p] == ':' || std::isspace((unsigned char)text[p]))) ++p;
+        if (p >= text.size()) return false;
+
+        // aceptamos true/false (lowercase)
+        if (text.compare(p, 4, "true") == 0)  { out = true;  return true; }
+        if (text.compare(p, 5, "false") == 0) { out = false; return true; }
+        return false;
+    }
 }
 
 
@@ -135,6 +150,13 @@ namespace configReader {
         outCfg.endpointUrl   = kDefaultEndpoint;
         outCfg.apiKey        = kDefaultApiKey;
         outCfg.framesPerFile = kDefaultFramesPerFile;
+        // Defaults de flags a false
+        outCfg.handTracking  = false;
+        outCfg.primaryButton = false;
+        outCfg.secondaryButton = false;
+        outCfg.grip          = false;
+        outCfg.trigger       = false;
+        outCfg.joystick      = false;
 
         std::string path, text;
         if (!getExpectedConfigPath(path)) {
@@ -159,7 +181,6 @@ namespace configReader {
         std::string endpoint = outCfg.endpointUrl;
         std::string key = outCfg.apiKey;
         int framesPerFile = outCfg.framesPerFile;
-        int frameRate = kDefaultFrameRate;
 
         std::string tmp;
         if (extractJsonString(text, "endpoint", tmp) && !tmp.empty()) endpoint = tmp;
@@ -170,6 +191,15 @@ namespace configReader {
         outCfg.endpointUrl   = endpoint;
         outCfg.apiKey        = key;
         outCfg.framesPerFile = framesPerFile;
+
+        // Flags (default=false si faltan)
+        bool vb;
+        if (extractJsonBool(text, "handTracking", vb))  outCfg.handTracking  = vb;
+        if (extractJsonBool(text, "primaryButton", vb)) outCfg.primaryButton = vb;
+        if (extractJsonBool(text, "secondaryButton", vb)) outCfg.secondaryButton = vb;
+        if (extractJsonBool(text, "grip", vb))          outCfg.grip          = vb;
+        if (extractJsonBool(text, "trigger", vb))       outCfg.trigger       = vb;
+        if (extractJsonBool(text, "joystick", vb))      outCfg.joystick      = vb;
 
         return true; // lectura realizada (aunque alguna clave falte)
     }
@@ -183,6 +213,7 @@ namespace configReader {
             if (extractJsonInt(text, "frameRate", vi)) {
                 if (vi >= 1 && vi <= 240) {
                     result = vi;
+                    LOGI("configReader: frameRate=%d", vi);
                 } else {
                     LOGI("configReader: frameRate=%d fuera de rango [1,240]; usando default %d", vi, kDefaultFrameRate);
                 }

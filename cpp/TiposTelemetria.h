@@ -7,7 +7,14 @@ struct UploaderConfig {
     std::string apiKey;       // Se carga desde initialConfig.json
     std::string sessionId;    // Viene del initialize (Unity/UE)
     std::string deviceInfo;   // Viene del initialize (Unity/UE)
-    int framesPerFile = 5400;
+    int framesPerFile = 150;
+    // Flags de características (DEFAULT = false si faltan en JSON)
+    bool handTracking  = false;
+    bool primaryButton = false;
+    bool secondaryButton = false;
+    bool grip = false;
+    bool trigger = false;
+    bool joystick = false;
 };
 
 // Estructura que se envia desde Unity/UE a C++

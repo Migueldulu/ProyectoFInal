@@ -4,6 +4,7 @@
 #include <android/log.h>
 #include <mutex>
 #include "configReader.h"
+#include "C3DRecorder.h"
 
 #define LOG_TAG "telemetria"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -16,6 +17,9 @@ static std::mutex g_mutex;
 
 static GestorTelemetria g_gestor;
 static AndroidUploader g_uploader;
+static C3DRecorder     g_c3d;
+//hay que cachear las flags de botonoes para enviarlas al motor
+static unsigned g_featureFlags = 0;
 
 // Captura JavaVM en carga de la libreria (a ver si asi funciona)
 jint JNI_OnLoad(JavaVM* vm, void*) {
@@ -69,16 +73,17 @@ int telemetry_initialize(const TelemetryConfigPlain* cfg) {
     ucfg.deviceInfo = cfg->deviceInfo ? cfg->deviceInfo : "";
 
     //Cargamos el resto de info desde el fichero initialConfig.json o info por defecto
-    configReader::setConfig(ucfg);
-    if (!configReader_setConfig(ucfg)) {
-        LOGI("Config file not found or unreadable; endpoint/apiKey will likely be localhost:1414 - no apiKey.");
+    const bool cfgOk = configReader::setConfig(ucfg);
+    if (!cfgOk) {
+        LOGI("Config file not found or unreadable; using defaults.");
     }
+
+    LOGI("config flags: hand=%d primary=%d secondary=%d grip=%d trigger=%d joystick=%d",
+         (int)ucfg.handTracking, (int)ucfg.primaryButton, (int)ucfg.secondaryButton,
+         (int)ucfg.grip, (int)ucfg.trigger, (int)ucfg.joystick);
+
     LOGI("config final: endpointUrl='%s', apiKey.len=%d, framesPerFile=%d, sessionId='%s', deviceInfo.len=%d",
-         ucfg.endpointUrl.c_str(),
-         (int)ucfg.apiKey.size(),
-         ucfg.framesPerFile,
-         ucfg.sessionId.c_str(),
-         (int)ucfg.deviceInfo.size());
+         ucfg.endpointUrl.c_str(), (int)ucfg.apiKey.size(), ucfg.framesPerFile, ucfg.sessionId.c_str(), (int)ucfg.deviceInfo.size());
 
     if (!g_uploader.initialize(ucfg)) {
         LOGE("Uploader initialize failed");
@@ -88,16 +93,28 @@ int telemetry_initialize(const TelemetryConfigPlain* cfg) {
         LOGE("Gestor initialize failed");
         return -4;
     }
+    g_featureFlags = configReader::getFeatureFlagsBitmask(ucfg);
+    LOGI("featureFlags=0x%02x", g_featureFlags);
     LOGI("telemetry initialized");
     int frameRate = 60;
     configReader::getFrameRate(frameRate);
     // Garantizando limites [1,240]
     if (frameRate < 1 || frameRate > 240) frameRate = 60;
+    if (!g_c3d.C3Dinitialize(ucfg, frameRate)) {
+        LOGE("C3DRecorder initialize failed; continuing without C3D output");
+        // NO devolvemos error: la telemetría HTTP sigue funcionando igual
+    }
     return frameRate;
+}
+
+unsigned telemetry_get_feature_flags() {
+    // No requiere lock; lectura de un unsigned es segura
+    return g_featureFlags;
 }
 
 void telemetry_record_frame(const VRFrameDataPlain* frame) {
     if (!frame) return;
+    g_c3d.C3DrecordFrame(*frame);
     g_gestor.recordFrame(*frame);
 }
 
@@ -107,6 +124,7 @@ void telemetry_force_upload() {
 
 void telemetry_shutdown() {
     std::lock_guard<std::mutex> lock(g_mutex);
+    g_c3d.C3Dfinalize();
     g_gestor.shutdown();
     g_uploader.shutdown();
 

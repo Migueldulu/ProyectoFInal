@@ -25,6 +25,9 @@ TELEMETRIA_API void telemetry_force_upload();
 // Libera recursos
 TELEMETRIA_API void telemetry_shutdown();
 
+// NUEVO: bitmask de flags de características leídas del JSON bit0=handTracking, bit1=primary, bit2=secondary, bit3=grip, bit4=trigger, bit5=joystick
+TELEMETRIA_API unsigned telemetry_get_feature_flags();
+
 #ifdef __cplusplus
 }
 #endif
