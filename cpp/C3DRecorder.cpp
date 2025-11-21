@@ -133,23 +133,63 @@ void C3DRecorder::C3Dfinalize() {
     finalized_ = true;
 }
 
+//nombres OpenXRHandJoints -> cambiando palm y wrist de orden porque asi se reciben
+// Cambiamos INDEX_PROXIMAl por FIN para que coincida con Gait Model (LFIN y RFIN)
+static const char* kHandJointNames[26] = {
+        "WRIST",
+        "PALM",
+        "THUMB_METACARPAL",
+        "THUMB_PROXIMAL",
+        "THUMB_DISTAL",
+        "THUMB_TIP",
+        "INDEX_METACARPAL",
+        "FIN",
+        "INDEX_INTERMEDIATE",
+        "INDEX_DISTAL",
+        "INDEX_TIP",
+        "MIDDLE_METACARPAL",
+        "MIDDLE_PROXIMAL",
+        "MIDDLE_INTERMEDIATE",
+        "MIDDLE_DISTAL",
+        "MIDDLE_TIP",
+        "RING_METACARPAL",
+        "RING_PROXIMAL",
+        "RING_INTERMEDIATE",
+        "RING_DISTAL",
+        "RING_TIP",
+        "LITTLE_METACARPAL",
+        "LITTLE_PROXIMAL",
+        "LITTLE_INTERMEDIATE",
+        "LITTLE_DISTAL",
+        "LITTLE_TIP"
+};
+
 void C3DRecorder::buildPointNames(std::vector<std::string>& outPointNames) const {
     outPointNames.clear();
-    outPointNames.reserve(5 + 26 + 26);
+    outPointNames.reserve(5 + 26 + 26 + 4);
 
     //segun el modelo de Gait sera RFHD o LFWD
     outPointNames.emplace_back("HEAD");
     outPointNames.emplace_back("LFHD");
     outPointNames.emplace_back("RFHD");
-    outPointNames.emplace_back("L_CTRL");
-    outPointNames.emplace_back("R_CTRL");
+    outPointNames.emplace_back("LCTRL");
+    outPointNames.emplace_back("RCTRL");
 
+    // Joints mano izquierda siguiendo el orden de XrHandJointEXT
     for (int i = 0; i < 26; ++i) {
-        outPointNames.emplace_back("L_J" + std::to_string(i));
+        outPointNames.emplace_back(std::string("L") + kHandJointNames[i]);
     }
+
+    // Joints mano derecha siguiendo el mismo orden
     for (int i = 0; i < 26; ++i) {
-        outPointNames.emplace_back("R_J" + std::to_string(i));
+        outPointNames.emplace_back(std::string("R") + kHandJointNames[i]);
     }
+
+    // Puntos extra tipo Plug-in Gait para la muñeca
+    outPointNames.emplace_back("LWRA");
+    outPointNames.emplace_back("LWRB");
+    outPointNames.emplace_back("RWRA");
+    outPointNames.emplace_back("RWRB");
 }
 
 void C3DRecorder::buildAnalogNames(std::vector<std::string>& outAnalogNames) const {
@@ -163,16 +203,17 @@ void C3DRecorder::buildAnalogNames(std::vector<std::string>& outAnalogNames) con
     };
 
     addQuat("HMD");
-    addQuat("LFHD");
-    addQuat("RFHD");
-    addQuat("L_CTRL");
-    addQuat("R_CTRL");
+    addQuat("LCTRL");
+    addQuat("RCTRL");
 
+    // Manos: L_*
     for (int i = 0; i < 26; ++i) {
-        addQuat("L_J" + std::to_string(i));
+        addQuat(std::string("L") + kHandJointNames[i]);
     }
+
+    // Manos: R_*
     for (int i = 0; i < 26; ++i) {
-        addQuat("R_J" + std::to_string(i));
+        addQuat(std::string("R") + kHandJointNames[i]);
     }
     // Canal extra: timestamp en segundos
     outAnalogNames.emplace_back("RealTime");
@@ -180,29 +221,35 @@ void C3DRecorder::buildAnalogNames(std::vector<std::string>& outAnalogNames) con
 
 //pequeno helper para calcular las posiciones exteriores de la cabeza
 //primero rotamos el vector y luego sumamos 7.5cm (15/2) a cada lado
-void calculateHeadWidth(const VRPosePlain& midPos,Vector3& pointRight,Vector3& pointLeft, float headWidth = 0.15f) {
+void calculateHeadWidth(const VRPosePlain& midPos,Vector3& pointRight,Vector3& pointLeft, float headWidth) {
     const float halfWidth = headWidth / 2.0f;
 
     // Extraer componentes
     float qx = midPos.rotation[0], qy =  midPos.rotation[1], qz =  midPos.rotation[2], qw =  midPos.rotation[3];
 
-    // Calcular directamente la rotacion del vector (halfWidth, 0, 0)
-    float tx = 2.0f * (qy * 0 - qz * 0);           // = 0
-    float ty = 2.0f * (qz * halfWidth - qx * 0);   // = 2 * qz * halfWidth
-    float tz = 2.0f * (qx * 0 - qy * halfWidth);   // = -2 * qy * halfWidth
+    // Vector lateral en el sistema local de la cabeza
+    Vector3 vLocal;
+    vLocal.x = halfWidth; vLocal.y = 0.0f; vLocal.z = 0.0f;
 
-    float wx = qw * halfWidth + qy * tz - qz * ty;
-    float wy = qw * 0 + qz * tx - qx * tz;
-    float wz = qw * 0 + qx * ty - qy * tx;
-    float ww = -qx * halfWidth - qy * 0 - qz * 0;
+    // Parte vectorial del cuaternion
+    Vector3 qv;
+    qv.x = qx; qv.y = qy; qv.z = qz;
 
-    // Multiplicar por el conjugado
-    Vector3 worldOffset;
-    worldOffset.x = wx * qw + ww * -qx + wy * -qz - wz * -qy;
-    worldOffset.y = wy * qw + ww * -qy + wz * -qx - wx * -qz;
-    worldOffset.z = wz * qw + ww * -qz + wx * -qy - wy * -qx;
+    // t = 2 * cross(qv, vLocal)
+    Vector3 t;
+    t.x = 2.0f * (qv.y * vLocal.z - qv.z * vLocal.y);
+    t.y = 2.0f * (qv.z * vLocal.x - qv.x * vLocal.z);
+    t.z = 2.0f * (qv.x * vLocal.y - qv.y * vLocal.x);
 
-    // Aplicar a la posición
+    // vWorld = vLocal + qw * t + cross(qv, t)
+    Vector3 vWorld;
+    vWorld.x = vLocal.x + qw * t.x + (qv.y * t.z - qv.z * t.y);
+    vWorld.y = vLocal.y + qw * t.y + (qv.z * t.x - qv.x * t.z);
+    vWorld.z = vLocal.z + qw * t.z + (qv.x * t.y - qv.y * t.x);
+
+    Vector3 worldOffset = vWorld;
+
+    // Aplicar a la posicion
     pointRight = {
             midPos.position[0] + worldOffset.x,
             midPos.position[1] + worldOffset.y,
@@ -213,6 +260,47 @@ void calculateHeadWidth(const VRPosePlain& midPos,Vector3& pointRight,Vector3& p
             midPos.position[0] - worldOffset.x,
             midPos.position[1] - worldOffset.y,
             midPos.position[2] - worldOffset.z
+    };
+}
+void calculateWristWidthFromJoint(const JointSamplePlain& joint, Vector3& pointRight, Vector3& pointLeft, float wristWidth) {
+    const float halfWidth = wristWidth / 2.0f;
+
+    float qx = joint.qx;
+    float qy = joint.qy;
+    float qz = joint.qz;
+    float qw = joint.qw;
+
+    // Vector lateral en el sistema local de la muneca
+    Vector3 vLocal;
+    vLocal.x = halfWidth; vLocal.y = 0.0f; vLocal.z = 0.0f;
+
+    // Parte vectorial del cuaternion
+    Vector3 qv;
+    qv.x = qx; qv.y = qy; qv.z = qz;
+
+    // t = 2 * cross(qv, vLocal)
+    Vector3 t;
+    t.x = 2.0f * (qv.y * vLocal.z - qv.z * vLocal.y);
+    t.y = 2.0f * (qv.z * vLocal.x - qv.x * vLocal.z);
+    t.z = 2.0f * (qv.x * vLocal.y - qv.y * vLocal.x);
+
+    // vWorld = vLocal + qw * t + cross(qv, t)
+    Vector3 vWorld;
+    vWorld.x = vLocal.x + qw * t.x + (qv.y * t.z - qv.z * t.y);
+    vWorld.y = vLocal.y + qw * t.y + (qv.z * t.x - qv.x * t.z);
+    vWorld.z = vLocal.z + qw * t.z + (qv.x * t.y - qv.y * t.x);
+
+    // Aplicar a la posicion del joint
+    pointRight = {
+            joint.px + vWorld.x,
+            joint.py + vWorld.y,
+            joint.pz + vWorld.z
+    };
+
+    pointLeft = {
+            joint.px - vWorld.x,
+            joint.py - vWorld.y,
+            joint.pz - vWorld.z
     };
 }
 
@@ -293,7 +381,7 @@ void C3DRecorder::writeC3D() {
             }
 
             Vector3 lfhdVec, rfhdVec;
-            calculateHeadWidth(f.hmdPose, lfhdVec, rfhdVec);
+            calculateHeadWidth(f.hmdPose, lfhdVec, rfhdVec, 0.15f);
             // LFHD
             {
                 Point p;
@@ -356,6 +444,61 @@ void C3DRecorder::writeC3D() {
                 points.point(p, 5 + 26 + j);
             }
 
+            // Puntos extra de muneca tipo LWRA/LWRB/RWRA/RWRB
+            const size_t IDX_LWRA = 5 + 26 + 26;       // despues de L+R joints
+            const size_t IDX_LWRB = IDX_LWRA + 1;
+            const size_t IDX_RWRA = IDX_LWRA + 2;
+            const size_t IDX_RWRB = IDX_LWRA + 3;
+
+            // Mano izquierda: asumimos joint 0 = WRIST (como en kHandJointNames)
+            if (f.leftHandJointCount > 0) {
+                const auto& wrist = f.leftHandJoints[0];
+                if (wrist.hasPose) {
+                    Vector3 wra, wrb;
+                    calculateWristWidthFromJoint(wrist, wra, wrb, 0.06f);
+                    {
+                        Point p;
+                        p.x(wra.x);
+                        p.y(wra.y);
+                        p.z(wra.z);
+                        p.residual(0.0);
+                        points.point(p, static_cast<int>(IDX_LWRA));
+                    }
+                    {
+                        Point p;
+                        p.x(wrb.x);
+                        p.y(wrb.y);
+                        p.z(wrb.z);
+                        p.residual(0.0);
+                        points.point(p, static_cast<int>(IDX_LWRB));
+                    }
+                }
+            }
+
+            // Mano derecha
+            if (f.rightHandJointCount > 0) {
+                const auto& wrist = f.rightHandJoints[0];
+                if (wrist.hasPose) {
+                    Vector3 wra, wrb;
+                    calculateWristWidthFromJoint(wrist, wra, wrb, 0.06f);
+                    {
+                        Point p;
+                        p.x(wra.x);
+                        p.y(wra.y);
+                        p.z(wra.z);
+                        p.residual(0.0);
+                        points.point(p, static_cast<int>(IDX_RWRA));
+                    }
+                    {
+                        Point p;
+                        p.x(wrb.x);
+                        p.y(wrb.y);
+                        p.z(wrb.z);
+                        p.residual(0.0);
+                        points.point(p, static_cast<int>(IDX_RWRB));
+                    }
+                }
+            }
             frame.points() = points;
         }
 
@@ -364,7 +507,7 @@ void C3DRecorder::writeC3D() {
             using ezc3d::DataNS::AnalogsNS::Channel;
             using ezc3d::DataNS::AnalogsNS::SubFrame;
             using ezc3d::DataNS::AnalogsNS::Analogs;
-
+            const size_t nbAnalogs = analogNames.size();
             // Solo 1 subframe por frame (ANALOG:RATE == POINT:RATE)
             SubFrame subframe;
             subframe.nbChannels(nbAnalogs);
@@ -412,9 +555,14 @@ void C3DRecorder::writeC3D() {
                 setChan(idx++, s.qw);
             }
 
+            while (idx + 1 < nbAnalogs) { // dejamos el ultimo para RealTime
+                setChan(idx++, 0.0f);
+            }
+
             // Canal extra: tiempo real del frame en segundos
-            if (idx < nbAnalogs) {
-                setChan(idx++, static_cast<float>(f.timestampSec));
+            if (nbAnalogs > 0) {
+                const size_t timeIdx = nbAnalogs - 1; // siempre el ultimo
+                setChan(timeIdx, static_cast<float>(f.timestampSec));
             }
 
             Analogs analogs;
